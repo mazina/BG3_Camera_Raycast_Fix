@@ -1,3 +1,4 @@
+#include "deferred_startup.h"
 #include "camera_avoidance_fix.h"
 #include <shlobj.h>
 #include <tlhelp32.h>
@@ -146,9 +147,9 @@ void Start(StartupLog& log) {
 }
 }
 
-// Native Mod Loader invokes Init after LoadLibrary, outside the loader lock,
-// before game CRT startup. No worker thread or Script Extender discovery needed.
-extern "C" __declspec(dllexport) void Init() {
+// Defer our scan, logging and thread suspension until SDL_Init. Running this
+// work before game CRT startup delays the loader before it loads the next DLL.
+static void InitializeDeferred() {
     if (started.test_and_set()) return;
     StartupLog log;
     try {
@@ -162,7 +163,9 @@ extern "C" __declspec(dllexport) void Init() {
     }
 }
 
-// The fix changes only game instruction operands; no callbacks point into this DLL.
+extern "C" __declspec(dllexport) void Init() { DeferredStartup::Schedule(InitializeDeferred); }
+
+// The temporary SDL callback is removed when initialization runs.
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(instance);
     return TRUE;
